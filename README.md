@@ -6,6 +6,9 @@ banded matrix LU and QR solver, and comparing to
 
 **please check report**:  [report](docs/report.md)
 
+**real world dataset**:  [report2](docs/report2.md)
+
+**blocked dense matrix**:  [report4](docs/report4.md)
 
 
 files in .claude
