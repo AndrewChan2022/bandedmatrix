@@ -8,8 +8,12 @@ debugger:
 
     vs2022
 
-python:
+vs2022:
+    d:\Program Files\Microsoft Visual Studio\2022\Community
+vswhere:
+    C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe
 
+python:
     conda at E:\ProgData\miniconda3
 
 IDAPro:
@@ -30,7 +34,7 @@ IDAPro:
     qt6         E:\local\Qt\6.4.2
     vtk         E:\local\vtk\9.4.0
     ...
-    
+
 
     special lib outside the dir:
     qt5         E:\Qt5\5.14.2

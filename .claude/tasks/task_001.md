@@ -24,3 +24,16 @@ report:
     after test and benchmark
 
     write summary document and report to docs/
+
+---------------------------------------------------------------
+
+additional:
+
+    now also write demo for eigen3
+
+    then compare the benchmark and number reulst and precision
+
+    then update report.
+
+
+    the 3rd lib info in envs/envs.md
