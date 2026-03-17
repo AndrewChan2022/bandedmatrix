@@ -97,6 +97,131 @@ std::vector<double> dense_lu_solve(const DenseMatrix& a, const std::vector<doubl
 }
 
 // --------------------------------------------------------------------------
+// Blocked Dense LU (LAPACK-style, right-looking)
+// --------------------------------------------------------------------------
+// For each block of NB columns:
+//   1. Panel factorization: point LU on NB columns (BLAS-2)
+//   2. DTRSM: compute U12 = L11^{-1} * A12 for panel rows, trailing cols
+//   3. DGEMM: A22 -= L21 * U12 for below-panel rows, trailing cols
+//
+// The DGEMM in step 3 reuses each element ~NB times in cache, converting
+// memory-bound BLAS-2 into compute-bound BLAS-3.
+
+bool dense_lu_decompose_blocked(DenseMatrix& a, int nb) {
+    const int n = a.n;
+    double* m = a.data.data();
+
+    a.d = 1.0;
+    if (nb < 1) nb = 1;
+    if (nb > n) nb = n;
+
+    // Implicit scaling for pivoting
+    std::vector<double> vv(n);
+    for (int i = 0; i < n; i++) {
+        double big = 0.0;
+        for (int j = 0; j < n; j++) {
+            double temp = std::abs(m[static_cast<size_t>(i) * n + j]);
+            if (temp > big) big = temp;
+        }
+        if (big == 0.0) return false;
+        vv[i] = 1.0 / big;
+    }
+
+    for (int jb = 0; jb < n; jb += nb) {
+        int jend = std::min(jb + nb, n);
+
+        // ---- Step 1: Panel factorization (columns jb..jend-1) ----
+        // Point algorithm, but only update within-panel columns.
+        for (int k = jb; k < jend; k++) {
+            // Find pivot
+            double big = 0.0;
+            int imax = k;
+            for (int i = k; i < n; i++) {
+                double temp = vv[i] * std::abs(m[static_cast<size_t>(i) * n + k]);
+                if (temp > big) {
+                    big = temp;
+                    imax = i;
+                }
+            }
+
+            if (imax != k) {
+                // Swap entire rows (all n columns, not just panel)
+                // Need full swap so that trailing columns are correct for DTRSM
+                for (int j = 0; j < n; j++) {
+                    std::swap(m[static_cast<size_t>(imax) * n + j],
+                              m[static_cast<size_t>(k) * n + j]);
+                }
+                a.d = -a.d;
+                vv[imax] = vv[k];
+            }
+            a.pivot[k] = imax;
+
+            double diag = m[static_cast<size_t>(k) * n + k];
+            if (diag == 0.0) return false;
+
+            double inv_pivot = 1.0 / diag;
+
+            // Compute L factors and update within-panel columns only
+            for (int i = k + 1; i < n; i++) {
+                double factor = m[static_cast<size_t>(i) * n + k] * inv_pivot;
+                m[static_cast<size_t>(i) * n + k] = factor; // store L
+
+                // Update within panel: columns k+1..jend-1
+                const double* row_k = m + static_cast<size_t>(k) * n;
+                double* row_i = m + static_cast<size_t>(i) * n;
+                for (int j = k + 1; j < jend; j++) {
+                    row_i[j] -= factor * row_k[j];
+                }
+            }
+        }
+
+        // ---- Step 2: DTRSM — solve L11 * U12 = A12 for panel rows ----
+        // For each trailing column c >= jend, forward-substitute through
+        // the panel's L11 to get the correct U12 values.
+        // L11 is unit lower triangular in columns jb..jend-1.
+        if (jend < n) {
+            for (int j = jb; j < jend; j++) {
+                double* row_j = m + static_cast<size_t>(j) * n;
+                double factor_cache = 0.0;
+                (void)factor_cache;
+                for (int i = j + 1; i < jend; i++) {
+                    double L_ij = m[static_cast<size_t>(i) * n + j];
+                    double* row_i = m + static_cast<size_t>(i) * n;
+                    // Update trailing columns of row i
+                    for (int c = jend; c < n; c++) {
+                        row_i[c] -= L_ij * row_j[c];
+                    }
+                }
+            }
+
+            // ---- Step 3: DGEMM — A22 -= L21 * U12 ----
+            // L21: rows jend..n-1, columns jb..jend-1 (already computed)
+            // U12: rows jb..jend-1, columns jend..n-1 (computed in step 2)
+            // A22: rows jend..n-1, columns jend..n-1
+            //
+            // This is the BLAS-3 heart: matrix-matrix multiply.
+            // Inner dimension = nb_actual, reusing each U12 row nb_actual times.
+            int nb_actual = jend - jb;
+
+            // Loop order: i, j, c (row-major optimal).
+            // For each row i, load L21[i][j] once (scalar), then sweep
+            // the entire U12 row j sequentially — cache-line friendly.
+            for (int i = jend; i < n; i++) {
+                double* row_i = m + static_cast<size_t>(i) * n;
+                for (int j = jb; j < jend; j++) {
+                    double L_ij = m[static_cast<size_t>(i) * n + j];
+                    const double* U_row_j = m + static_cast<size_t>(j) * n;
+                    for (int c = jend; c < n; c++) {
+                        row_i[c] -= L_ij * U_row_j[c];
+                    }
+                }
+            }
+        }
+    }
+    return true;
+}
+
+// --------------------------------------------------------------------------
 // Dense QR Decomposition (Householder reflections)
 // --------------------------------------------------------------------------
 

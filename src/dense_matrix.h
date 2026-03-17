@@ -36,6 +36,18 @@ void dense_lu_solve(const DenseMatrix& a, double* b);
 std::vector<double> dense_lu_solve(const DenseMatrix& a, const std::vector<double>& b);
 
 // --------------------------------------------------------------------------
+// Blocked Dense LU (LAPACK-style panel + DGEMM trailing update)
+// --------------------------------------------------------------------------
+// The milestone optimization from LAPACK: reorganize column-by-column
+// elimination (BLAS-2) into panel factorization + trailing matrix update
+// using matrix-matrix multiply (BLAS-3) for cache locality.
+
+bool dense_lu_decompose_blocked(DenseMatrix& a, int nb = 64);
+
+// Uses same storage format as point LU — solve is identical.
+// Just call dense_lu_solve() after dense_lu_decompose_blocked().
+
+// --------------------------------------------------------------------------
 // Dense QR Decomposition (Householder reflections, NR Ch 2.10)
 // --------------------------------------------------------------------------
 

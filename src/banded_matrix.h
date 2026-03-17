@@ -86,6 +86,54 @@ void band_lu_solve(const BandMatrix& a, double* b);
 std::vector<double> band_lu_solve(const BandMatrix& a, const std::vector<double>& b);
 
 // --------------------------------------------------------------------------
+// Blocked LU Decomposition (LAPACK-style, BLAS-3 trailing update)
+// --------------------------------------------------------------------------
+// Uses panel factorization + DGEMM-like trailing update for better
+// cache utilization at larger bandwidths. Based on the LAPACK dgbtrf
+// milestone: reorganize elimination to use Level-3 BLAS operations.
+//
+// Internal storage: LAPACK-style, ldab = 2*m1 + m2 + 1, no row-shift.
+// Element A(i,j) at ab[i * ldab + (m1 + j - i)], diagonal at column m1.
+// Extra m1 columns (0..m1-1) for fill-in from row pivoting.
+
+struct BandMatrixBlocked {
+    int n;
+    int m1;
+    int m2;
+    int ldab;    // = 2*m1 + m2 + 1
+
+    std::vector<double> ab;       // n * ldab, LAPACK-style band storage
+    std::vector<double> diag_inv; // precomputed 1/diagonal
+    std::vector<int> pivot;
+    double d;
+
+    BandMatrixBlocked() : n(0), m1(0), m2(0), ldab(0), d(1.0) {}
+
+    BandMatrixBlocked(int n_, int m1_, int m2_)
+        : n(n_), m1(m1_), m2(m2_), ldab(2 * m1_ + m2_ + 1), d(1.0)
+    {
+        ab.assign(static_cast<size_t>(n) * ldab, 0.0);
+        diag_inv.resize(n, 0.0);
+        pivot.resize(n, 0);
+    }
+
+    // Access A(i,j) in LAPACK-style storage (before decomposition)
+    double& operator()(int i, int j) {
+        return ab[static_cast<size_t>(i) * ldab + (m1 + j - i)];
+    }
+    double operator()(int i, int j) const {
+        return ab[static_cast<size_t>(i) * ldab + (m1 + j - i)];
+    }
+};
+
+// Blocked LU decomposition. nb = block size (default 32).
+bool band_lu_decompose_blocked(BandMatrixBlocked& a, int nb = 32);
+
+// Solve using blocked LU decomposition result.
+void band_lu_solve_blocked(const BandMatrixBlocked& a, double* b);
+std::vector<double> band_lu_solve_blocked(const BandMatrixBlocked& a, const std::vector<double>& b);
+
+// --------------------------------------------------------------------------
 // QR Decomposition for Band Matrices
 // --------------------------------------------------------------------------
 // Uses Givens rotations to exploit banded structure.
