@@ -38,6 +38,10 @@ struct BandMatrix {
     // Flat array, n * m1 elements.
     std::vector<double> al;
 
+    // Precomputed reciprocals of U diagonal (1.0 / au[k*mm+0]) for back-substitution.
+    // Avoids division in the solve loop (multiply is ~4x faster than divide).
+    std::vector<double> diag_inv;
+
     // Pivot indices for LU decomposition
     std::vector<int> pivot;
 
@@ -51,6 +55,7 @@ struct BandMatrix {
     {
         au.assign(static_cast<size_t>(n) * mm, 0.0);
         al.assign(static_cast<size_t>(n) * m1, 0.0);
+        diag_inv.resize(n, 0.0);
         pivot.resize(n, 0);
     }
 
